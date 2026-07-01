@@ -57,4 +57,35 @@ impl RaftNode {
         }
 
     }
+
+    pub fn count_votes(&mut self, responses: Vec<RequestVoteResponse>)  {
+        // GuardL only candidate can win an election
+        // IF we alredy stepped down (someone had a bigger term), do nothing 
+        if self.role != Role::Candidate {
+            return;
+        }
+
+        //Start vote from 1 because we voted for ourselves in the start election. 
+        let mut votes = 1;
+
+        for resp in responses {
+            // Rule 1: a reply from a newer term means we've lost. Step down.
+            if resp.term > self.current_term {
+                self.current_term = resp.term;
+                self.role = Role::Follower;
+                self.voted_for = None;
+                return; // abandon the election immediately
+            }
+
+            // Rule 2: tally the yes-votes.
+            if resp.vote_granted {
+                votes += 1;
+            }
+        }
+        // Rule 3: if we reached majority, become the Leader.
+        if votes >= self.majority() {
+            self.role = Role::Leader;
+        }
+
+    }
 }
