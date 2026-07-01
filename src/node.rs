@@ -29,4 +29,19 @@ impl RaftNode {
             peers,
         }
     }
+
+    // Votes needed to win an election: (cluster size / 2) + 1
+    pub fn majority(&self) -> usize {
+        (self.peers.len() + 1) / 2 + 1
+    }
+
+    // Index of the last log entry — sent in RequestVote so voters can check log freshness
+    pub fn last_log_index(&self) -> LogIndex {
+        self.log.last().map(|e| e.index).unwrap_or(0)
+    }
+
+    // Term of the last log entry — paired with last_log_index for the up-to-date check
+    pub fn last_log_term(&self) -> Term {
+        self.log.last().map(|e| e.term).unwrap_or(0)
+    }
 }
