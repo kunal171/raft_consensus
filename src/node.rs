@@ -1,4 +1,4 @@
-pub use crate::types::*;
+use crate::types::*;
 // Raft node Struct captures the state of a Raft node, including its persistent and volatile state, as well as its cluster membership.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RaftNode {
