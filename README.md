@@ -30,15 +30,16 @@ For the full theory — roles, terms, RPCs, election, log replication, safety gu
 
 ## Milestones
 
-**Milestone 1 — Node Structure** *(current)*
+**Milestone 1 — Node Structure** ✅
 Define the data model: node state, roles, log entries, RPC message types.
 Files: `types.rs`, `node.rs`, `messages.rs`
 
-**Milestone 2 — Leader Election**
-Election timeouts, RequestVote RPC, vote counting, term tracking.
+**Milestone 2 — Leader Election** ✅
+RequestVote RPC, vote counting, term tracking. A candidate can nominate itself,
+collect votes, and become leader on majority. Covered by unit tests in `election.rs`.
 Files: `election.rs`
 
-**Milestone 3 — Log Replication**
+**Milestone 3 — Log Replication** *(current)*
 AppendEntries RPC, heartbeats, commit index, state machine application.
 Files: `log.rs`
 
