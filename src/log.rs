@@ -1,8 +1,10 @@
 use crate::node::RaftNode;
 use crate::messages::{AppendEntriesResponse, AppendEntries};
-use crate::types::{Role, Command, LogEntry};
+use crate::types::{Role, Command, LogEntry, LogIndex};
 
 impl RaftNode {
+
+    // Handle an incoming AppendEntries RPC from the leader. This is used both for log replication and as a heartbeat.
     pub fn handle_append_entries(&mut self, req: AppendEntries) -> AppendEntriesResponse {
         //Rule 1: Reject if the leader's term is less than the current term
         if req.term < self.current_term {
@@ -46,22 +48,55 @@ impl RaftNode {
         AppendEntriesResponse { term: self.current_term, success: true }
     }
 
+    // Append a new command to the log. Only the leader may accept client writes.
     pub fn append_command(&mut self, command: Command) -> Option<LogEntry> {
-    // Only a leader may accept client writes. Followers reject — the caller
-    // (later: the load balancer) should route the write to the real leader.
-    if self.role != Role::Leader {
-        return None;
+        // Only a leader may accept client writes. Followers reject — the caller
+        // (later: the load balancer) should route the write to the real leader.
+        if self.role != Role::Leader {
+            return None;
+        }
+
+        // Next slot = one past the current last index. First entry gets index 1.
+        let entry = LogEntry {
+            index: self.last_log_index() + 1,
+            term: self.current_term,
+            command,
+        };
+
+        self.log.push(entry.clone());
+        Some(entry)
     }
 
-    // Next slot = one past the current last index. First entry gets index 1.
-    let entry = LogEntry {
-        index: self.last_log_index() + 1,
-        term: self.current_term,
-        command,
-    };
+    // Build an AppendEntries RPC to send to a follower, starting at the given next_index.
+    pub fn build_append_entries(&self, next_index: LogIndex) -> AppendEntries {
+        // The entry immediately before the ones we're about to send.
+        // next_index == 1 → prev is index 0 (nothing before it) → base case.
+        let prev_log_index = next_index.saturating_sub(1);
+        let prev_log_term = if prev_log_index == 0 {
+            0
+        } else {
+            self.log[(prev_log_index - 1) as usize].term
+        };
 
-    self.log.push(entry.clone());
-    Some(entry)
-}
+        // Everything from next_index to the end of the log.
+        // If the follower is fully caught up, this is empty → a pure heartbeat.
+        let entries: Vec<LogEntry> = self
+            .log
+            .iter()
+            .filter(|e| e.index >= next_index)
+            .cloned()
+            .collect();
+
+        AppendEntries {
+            term: self.current_term,
+            leader_id: self.id,
+            prev_log_index,
+            prev_log_term,
+            entries,
+            leader_commit: self.commit_index,
+        }
+    }
+
+    
 
 }
