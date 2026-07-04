@@ -1,5 +1,5 @@
 use crate::node::RaftNode;
-use crate::messages::{AppendEntriesResponse, RequestVote, RequestVoteResponse};
+use crate::messages::{AppendEntriesResponse, AppendEntries};
 use crate::types::Role;
 
 impl RaftNode {
