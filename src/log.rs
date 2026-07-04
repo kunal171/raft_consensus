@@ -136,5 +136,75 @@ impl RaftNode {
         }
     }
 
+    // Apply all committed but not yet applied log entries to the state machine.
+    pub fn apply_committed(&mut self) {
+    // Run every entry that's committed but not yet applied.
+        while self.last_applied < self.commit_index {
+            self.last_applied += 1;
 
+            // Clone the command out first so the immutable borrow of `self.log`
+            // ends before we mutate `self.state_machine`. Avoids a borrow clash.
+            let command = self.log[(self.last_applied - 1) as usize].command.clone();
+
+            match command {
+                Command::Set { key, value } => {
+                    self.state_machine.insert(key, value);
+                }
+                Command::Delete { key } => {
+                    self.state_machine.remove(&key);
+                }
+                Command::Noop => { /* placeholder entry — no state change */ }
+            }
+        }
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_leader(id: u64, peers: Vec<u64>) -> RaftNode {
+        let mut n = RaftNode::new(id, peers);
+        n.role = Role::Leader;
+        n.current_term = 1;
+        n
+    }
+
+    #[test]
+    fn leader_replicates_and_commits() {
+        let mut leader = make_leader(1, vec![2, 3]);
+        let mut f2 = RaftNode::new(2, vec![1, 3]);
+        let mut f3 = RaftNode::new(3, vec![1, 2]);
+
+        // 1. Client write — leader appends to its own log (uncommitted).
+        let entry = leader.append_command(Command::Set {
+            key: "x".to_string(),
+            value: "5".to_string(),
+        });
+        assert!(entry.is_some());
+        assert_eq!(leader.last_log_index(), 1);
+        assert_eq!(leader.commit_index, 0); // not committed yet
+
+        // 2. Leader builds the message (followers need from index 1).
+        let msg = leader.build_append_entries(1);
+
+        // 3. Followers apply it — both accept (empty logs, base case).
+        let r2 = f2.handle_append_entries(msg.clone());
+        let r3 = f3.handle_append_entries(msg);
+        assert!(r2.success);
+        assert!(r3.success);
+
+        // 4. Leader tallies acks for index 1 → majority → commit advances.
+        leader.handle_append_responses(vec![r2, r3], 1);
+        assert_eq!(leader.commit_index, 1);
+
+        // 5. Leader applies the committed entry to its state machine.
+        leader.apply_committed();
+        assert_eq!(leader.state_machine.get("x"), Some(&"5".to_string()));
+
+        // All three logs are now identical — the core Raft guarantee.
+        assert_eq!(leader.log, f2.log);
+        assert_eq!(leader.log, f3.log);
+    }
 }

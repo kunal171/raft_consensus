@@ -1,4 +1,6 @@
 use crate::types::*;
+use std::collections::HashMap;
+
 // Raft node Struct captures the state of a Raft node, including its persistent and volatile state, as well as its cluster membership.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RaftNode {
@@ -14,6 +16,9 @@ pub struct RaftNode {
 
     //cluster membership
     pub peers: Vec<NodeId>,
+    // Volatile state on leaders - reinitialized after election
+    pub state_machine: HashMap<String, String>,
+
 }
 
 impl RaftNode {
@@ -27,6 +32,7 @@ impl RaftNode {
             commit_index: 0,
             last_applied: 0,
             peers,
+            state_machine: HashMap::new(),
         }
     }
 
