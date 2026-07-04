@@ -1,6 +1,6 @@
 use crate::node::RaftNode;
 use crate::messages::{AppendEntriesResponse, AppendEntries};
-use crate::types::Role;
+use crate::types::{Role, Command, LogEntry};
 
 impl RaftNode {
     pub fn handle_append_entries(&mut self, req: AppendEntries) -> AppendEntriesResponse {
@@ -45,4 +45,23 @@ impl RaftNode {
 
         AppendEntriesResponse { term: self.current_term, success: true }
     }
+
+    pub fn append_command(&mut self, command: Command) -> Option<LogEntry> {
+    // Only a leader may accept client writes. Followers reject — the caller
+    // (later: the load balancer) should route the write to the real leader.
+    if self.role != Role::Leader {
+        return None;
+    }
+
+    // Next slot = one past the current last index. First entry gets index 1.
+    let entry = LogEntry {
+        index: self.last_log_index() + 1,
+        term: self.current_term,
+        command,
+    };
+
+    self.log.push(entry.clone());
+    Some(entry)
+}
+
 }
