@@ -97,6 +97,44 @@ impl RaftNode {
         }
     }
 
-    
+    // Handle responses from followers to our AppendEntries RPCs. This is used to track replication progress and commit entries.
+    pub fn handle_append_responses(
+        &mut self,
+        responses: Vec<AppendEntriesResponse>,
+        replicated_index: LogIndex, // the highest index we just tried to replicate
+    ) {
+        // Only a leader commits entries.
+        if self.role != Role::Leader {
+            return;
+        }
+
+        // Start at 1 — the leader already has the entry in its own log.
+        let mut acks = 1;
+
+        for resp in responses {
+            // A reply from a newer term means we're stale — step down immediately.
+            if resp.term > self.current_term {
+                self.current_term = resp.term;
+                self.role = Role::Follower;
+                self.voted_for = None;
+                return;
+            }
+            if resp.success {
+                acks += 1;
+            }
+        }
+
+        // Advance commit only if BOTH hold:
+        //  (a) a majority (incl. leader) acknowledged, and
+        //  (b) the entry is from THIS term (Raft's current-term commit rule).
+        if acks >= self.majority() && replicated_index > self.commit_index {
+            if let Some(entry) = self.log.get((replicated_index - 1) as usize) {
+                if entry.term == self.current_term {
+                    self.commit_index = replicated_index;
+                }
+            }
+        }
+    }
+
 
 }
