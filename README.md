@@ -39,11 +39,13 @@ RequestVote RPC, vote counting, term tracking. A candidate can nominate itself,
 collect votes, and become leader on majority. Covered by unit tests in `election.rs`.
 Files: `election.rs`
 
-**Milestone 3 — Log Replication** *(current)*
-AppendEntries RPC, heartbeats, commit index, state machine application.
+**Milestone 3 — Log Replication** ✅
+AppendEntries RPC, consistency check, commit index, state machine application.
+Leader replicates entries to followers, commits on majority, applies to a KV store.
+Covered by a replication unit test in `log.rs`.
 Files: `log.rs`
 
-**Milestone 4 — Load Balancer**
+**Milestone 4 — Load Balancer** *(current)*
 Routes writes to the current leader, reads to any available node.
 Files: `load_balancer.rs`
 
