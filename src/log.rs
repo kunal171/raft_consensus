@@ -1,10 +1,24 @@
+//! Log replication — the `AppendEntries` half of Raft.
+//!
+//! This module carries the data path of the algorithm, split between the two
+//! sides of the RPC:
+//!
+//! - **Follower side:** [`RaftNode::handle_append_entries`] runs the
+//!   consistency check, appends entries, and advances the commit index.
+//! - **Leader side:** [`RaftNode::append_command`] accepts a client write,
+//!   [`RaftNode::build_append_entries`] packages a message for a follower, and
+//!   [`RaftNode::handle_append_responses`] commits once a majority acknowledge.
+//! - **Both sides:** [`RaftNode::apply_committed`] runs committed commands into
+//!   the state machine.
+
 use crate::node::RaftNode;
 use crate::messages::{AppendEntriesResponse, AppendEntries};
 use crate::types::{Role, Command, LogEntry, LogIndex};
 
 impl RaftNode {
-
-    // Handle an incoming AppendEntries RPC from the leader. This is used both for log replication and as a heartbeat.
+    /// Follower side of `AppendEntries`: validate the leader, run the log
+    /// consistency check, append the new entries (deleting any conflicting
+    /// suffix), and advance the commit index. Empty `entries` = heartbeat.
     pub fn handle_append_entries(&mut self, req: AppendEntries) -> AppendEntriesResponse {
         //Rule 1: Reject if the leader's term is less than the current term
         if req.term < self.current_term {
@@ -48,7 +62,9 @@ impl RaftNode {
         AppendEntriesResponse { term: self.current_term, success: true }
     }
 
-    // Append a new command to the log. Only the leader may accept client writes.
+    /// Leader side: wrap a client command in a `LogEntry` (stamped with the
+    /// next index and the current term) and append it, still uncommitted.
+    /// Returns `None` if this node is not the leader.
     pub fn append_command(&mut self, command: Command) -> Option<LogEntry> {
         // Only a leader may accept client writes. Followers reject — the caller
         // (later: the load balancer) should route the write to the real leader.
@@ -67,7 +83,10 @@ impl RaftNode {
         Some(entry)
     }
 
-    // Build an AppendEntries RPC to send to a follower, starting at the given next_index.
+    /// Leader side: build the `AppendEntries` message for a follower that needs
+    /// entries starting at `next_index`. Computes `prev_log_*` for the
+    /// consistency check and includes every entry from `next_index` onward
+    /// (empty when the follower is caught up, i.e. a heartbeat).
     pub fn build_append_entries(&self, next_index: LogIndex) -> AppendEntries {
         // The entry immediately before the ones we're about to send.
         // next_index == 1 → prev is index 0 (nothing before it) → base case.
@@ -97,7 +116,10 @@ impl RaftNode {
         }
     }
 
-    // Handle responses from followers to our AppendEntries RPCs. This is used to track replication progress and commit entries.
+    /// Leader side: tally follower acks and advance `commit_index` once a
+    /// majority (including the leader) have `replicated_index` — but only if
+    /// that entry is from the current term (Raft's current-term commit rule).
+    /// Steps down if any reply carries a newer term.
     pub fn handle_append_responses(
         &mut self,
         responses: Vec<AppendEntriesResponse>,
@@ -136,7 +158,9 @@ impl RaftNode {
         }
     }
 
-    // Apply all committed but not yet applied log entries to the state machine.
+    /// Walk `last_applied` up to `commit_index`, executing each committed
+    /// command against the state machine. Idempotent: safe to call after every
+    /// commit, and never runs an entry that is not yet committed.
     pub fn apply_committed(&mut self) {
     // Run every entry that's committed but not yet applied.
         while self.last_applied < self.commit_index {

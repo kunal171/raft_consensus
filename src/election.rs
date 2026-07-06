@@ -1,10 +1,21 @@
+//! Leader election — the `RequestVote` half of Raft.
+//!
+//! Three methods on [`RaftNode`] cover a full election:
+//! - [`RaftNode::start_election`] — a follower nominates itself (candidate side).
+//! - [`RaftNode::handle_request_vote`] — a node decides whether to grant a vote
+//!   (voter side); this is where the safety rules are enforced.
+//! - [`RaftNode::count_votes`] — a candidate tallies replies and becomes leader
+//!   on a majority.
+
 use crate::node::RaftNode;
 use crate::messages::{RequestVote, RequestVoteResponse};
 use crate::types::Role;
 
 impl RaftNode {
-
-    // Start a new election by transitioning to the Candidate state, incrementing the current term, voting for self, and sending RequestVote messages to all other nodes.
+    /// Begin an election: advance the term, become a `Candidate`, vote for self,
+    /// and return the `RequestVote` to broadcast to peers.
+    ///
+    /// Called when a follower's election timer expires without hearing a leader.
     pub fn start_election(&mut self) -> RequestVote {
         // 1 advance the logical clock — new election = new term
         self.current_term += 1;
@@ -22,6 +33,11 @@ impl RaftNode {
         }
     }
 
+    /// Decide whether to grant a vote to a candidate and return the response.
+    ///
+    /// Enforces the four voting rules: reject stale terms, step down on newer
+    /// terms, require the candidate's log to be at least as up-to-date, and
+    /// grant at most one vote per term.
     pub fn handle_request_vote(&mut self, req: RequestVote) -> RequestVoteResponse{
         //Rule 1 : Reject if the candidate's term is less than the current term
         if req.term < self.current_term {
@@ -58,6 +74,10 @@ impl RaftNode {
 
     }
 
+    /// Tally the vote responses and, on a majority, become `Leader`.
+    ///
+    /// Steps down immediately if any reply carries a newer term. Counts the
+    /// node's own self-vote, so it starts at 1.
     pub fn count_votes(&mut self, responses: Vec<RequestVoteResponse>)  {
         // GuardL only candidate can win an election
         // IF we alredy stepped down (someone had a bigger term), do nothing 
